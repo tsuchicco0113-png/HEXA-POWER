@@ -37,7 +37,7 @@ import time
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 LCD_W, LCD_H = 320, 170
 TOP_H, BOT_H = 18, 16
 BG, FG, SUB = (14, 16, 22), (235, 238, 245), (150, 158, 175)
@@ -516,6 +516,19 @@ class App:
         return dict((k, d) for k, _, d in ITEMS)[key]
 
     def draw(self):
+        # 左側 (六角形と説明) は変わった時だけ描き直す。ぼかし(光る枠)が重く、
+        # 1コアの本体では毎秒描くと記録の間隔が延びるため
+        key = (self.sel, tuple(self.label_of(k) for k, _, _ in ITEMS), tuple(sorted(self.deltas.items())),
+               self.detail_of(ITEMS[self.sel][0]))
+        if getattr(self, "_left_key", None) != key:
+            self._left = self.draw_left()
+            self._left_key = key
+        img = self._left.copy()
+        d = ImageDraw.Draw(img)
+        self.draw_power(img, d)
+        return self.chrome(img)
+
+    def draw_left(self):
         img = self.honey.copy()
         d = ImageDraw.Draw(img)
         # ---- 六角形
@@ -546,9 +559,7 @@ class App:
             dl = "前回の差 " + self.deltas[key]
             d.text((168 - self.font_t.getlength(dl), y + 2), dl, fill=ACC, font=self.font_t)
         self.text_fit(d, (x, y + 18), self.detail_of(key), 164, self.font_t, SUB)
-        # ---- 右: 消費電力
-        self.draw_power(img, d)
-        return self.chrome(img)
+        return img
 
     def text_fit(self, d, xy, text, w, font, col):
         if font.getlength(text) > w:
@@ -586,28 +597,32 @@ class App:
         # グラフ
         gx0, gy0, gx1, gy1 = x0, y + 56, x1 - 2, y + 96
         d.rectangle((gx0, gy0, gx1, gy1), outline=(40, 46, 60))
-        pts = [(t, p) for t, p in self.hist if p is not None]
+        now = time.time()
+        span = HIST_N * SAMPLE_SEC
+        # 実機では1回の描画に時間がかかり、150個の記録が 150秒より長くなる。
+        # 枠の外へはみ出さないよう、表示する時間の範囲内だけを描く
+        shown = [(t, p) for t, p in self.hist if now - t <= span]
+        pts = [(t, p) for t, p in shown if p is not None]
         top = max([3.0] + [p for _, p in pts]) if pts else 3.0
         top = math.ceil(top)
         for k in range(1, top):
             yy = gy1 - (gy1 - gy0) * k / top
             d.line((gx0 + 1, yy, gx1 - 1, yy), fill=(26, 31, 42))
-        now = time.time()
-        span = HIST_N * SAMPLE_SEC
 
         def px(t):
-            return gx1 - (now - t) / span * (gx1 - gx0)
+            x = gx1 - 1 - (now - t) / span * (gx1 - gx0 - 2)
+            return min(gx1 - 1, max(gx0 + 1, x))
         for t in self.marks:
             if now - t < span:
                 d.line((px(t), gy0 + 1, px(t), gy1 - 1), fill=(90, 70, 30))
         seg = []
-        for t, p in self.hist:
+        for t, p in shown:
             if p is None:
                 if len(seg) > 1:
                     d.line(seg, fill=ACC, width=2)
                 seg = []
                 continue
-            seg.append((px(t), gy1 - (gy1 - gy0) * min(p, top) / top))
+            seg.append((px(t), gy1 - 1 - (gy1 - gy0 - 2) * min(p, top) / top))
         if len(seg) > 1:
             d.line(seg, fill=ACC, width=2)
         d.text((gx0 + 2, gy0 + 1), f"{top}W", fill=(80, 88, 104), font=self.font_t)
