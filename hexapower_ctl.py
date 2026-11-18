@@ -10,6 +10,7 @@
   hexapower-ctl set lan on|off           有線LAN チップ (USB の SR9900 を切り離す)
   hexapower-ctl set cpu std|eco|min      CPU (標準 / 2コア / 2コア+最低クロック)
   hexapower-ctl set wifips on|off        Wi-Fi の省電力
+  hexapower-ctl set bl 10〜100           画面の明るさ (%)
   hexapower-ctl boot on|off              起動時に今の設定を自動で当てる
   hexapower-ctl apply-boot               (systemd から) 保存した設定を当てる
 
@@ -257,6 +258,33 @@ def wifips_set(on):
         raise RuntimeError("iw: " + out.strip())
 
 
+# ------------------------------------------------------------ 画面の明るさ
+def bl_node():
+    nodes = sorted(glob.glob(SYS + "/class/backlight/*"))
+    return nodes[0] if nodes else None
+
+
+def bl_get():
+    n = bl_node()
+    if not n:
+        return None
+    try:
+        mx = int(rd(n + "/max_brightness", "0"))
+        cur = int(rd(n + "/brightness", "0"))
+    except ValueError:
+        return None
+    return round(cur * 100 / mx) if mx else None
+
+
+def bl_set(pct):
+    n = bl_node()
+    if not n:
+        raise RuntimeError("バックライトが見つかりません")
+    pct = max(5, min(100, int(pct)))         # 真っ暗にはしない
+    mx = int(rd(n + "/max_brightness", "100"))
+    wr(n + "/brightness", max(1, round(mx * pct / 100)))
+
+
 # ------------------------------------------------------------ まとめ
 SETTERS = {"bt": bt_set, "hdmi": hdmi_set, "lan": lan_set, "wifips": wifips_set}
 
@@ -264,7 +292,7 @@ SETTERS = {"bt": bt_set, "hdmi": hdmi_set, "lan": lan_set, "wifips": wifips_set}
 def state():
     c = load_conf()
     return {"bt": bt_get(), "hdmi": hdmi_get(), "lan": lan_get(), "cpu": cpu_get(),
-            "wifips": wifips_get(), "boot": bool(c.get("boot")), "saved": c.get("want", {})}
+            "wifips": wifips_get(), "bl": bl_get(), "boot": bool(c.get("boot")), "saved": c.get("want", {})}
 
 
 def remember(key, value):
@@ -282,6 +310,8 @@ def apply_boot():
         try:
             if key == "cpu":
                 cpu_set(value)
+            elif key == "bl":
+                bl_set(value)
             elif key in SETTERS:
                 SETTERS[key](value == "on")
             print("boot apply:", key, value)
@@ -301,6 +331,8 @@ def main(argv):
             key, val = argv[2], argv[3]
             if key == "cpu":
                 cpu_set(val)
+            elif key == "bl" and val.isdigit():
+                bl_set(val)
             elif key in SETTERS and val in ("on", "off"):
                 SETTERS[key](val == "on")
             else:

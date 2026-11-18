@@ -7,13 +7,14 @@
   3 LAN     有線LANチップ (USB)       ENTER で ON/OFF
   4 CPU     標準 / エコ(2コア) / 最小(2コア+最低クロック)   ENTER で切替
   5 Wi-Fi   Wi-Fi の省電力            ENTER で ON/OFF
-  6 起動時  上の設定を起動時にも当てる  ENTER で ON/OFF
+  6 明るさ  画面の明るさ 100→60→30→10%  ENTER で切替
+  S         ここでの設定を起動時にも当てる (上のバーに表示)
 切り替えると約15秒あとに「切替前との差」を出す (電池で動いている時だけ測れる)
 
 消費電力は本体の残量計 BQ27220 (I2C 0x55) の値。USB / EXT から給電中は
 本体は外の電気で動くので、電池側からは消費が測れない (画面にそう出る)。
 
-キー: 方向 = F(↑) X(↓) Z(←) C(→) / 1〜6 = 直接選ぶ / ENTER = 切替 / ESC = 終了
+キー: 方向 = F(↑) X(↓) Z(←) C(→) / 1〜6 = 直接選ぶ / ENTER = 切替 / S = 起動時 / ESC = 終了
 usage:
   hexapower                 # 通常起動 (ランチャーのアイコンと同じ)
   hexapower --probe         # 電池の値の読み方と、各機能が見つかるかを表示して終了
@@ -36,7 +37,7 @@ import time
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 LCD_W, LCD_H = 320, 170
 TOP_H, BOT_H = 18, 16
 BG, FG, SUB = (14, 16, 22), (235, 238, 245), (150, 158, 175)
@@ -56,10 +57,18 @@ ITEMS = [  # key, 六角形の名前, 説明
     ("lan", "LAN", "有線LANチップ。LANケーブルを使わないなら OFF"),
     ("cpu", "CPU", "標準→エコ(2コア)→最小(最低クロック)"),
     ("wifips", "Wi-Fi", "Wi-Fi の省電力。ON で節電 (反応が少し遅くなる)"),
-    ("boot", "起動時", "ここでの設定を、次の起動時にも当てる"),
+    ("bl", "明るさ", "画面の明るさ 100→60→30→10%"),
 ]
 CPU_NAMES = {"std": "標準", "eco": "エコ", "min": "最小", "custom": "独自"}
 CPU_NEXT = {"std": "eco", "eco": "min", "min": "std", "custom": "std"}
+BL_LEVELS = [100, 60, 30, 10]
+
+
+def bl_next(cur):
+    for lv in BL_LEVELS:
+        if cur is not None and lv < cur - 2:
+            return lv
+    return BL_LEVELS[0]
 
 
 # ================================================================ keys (HEXA CLIP と同じ)
@@ -69,7 +78,7 @@ EV_SIZE = struct.calcsize(EV_FMT)
 K_ESC, K_BS, K_TAB, K_ENTER = 1, 14, 15, 28
 K_UP, K_LEFT, K_RIGHT, K_DOWN = 103, 105, 106, 108
 DIGITS = {2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0"}
-LETTERS = {33: "f", 45: "x", 44: "z", 46: "c", 19: "r", 16: "q"}
+LETTERS = {33: "f", 45: "x", 44: "z", 46: "c", 19: "r", 16: "q", 31: "s"}
 ACTIONS = {K_UP: "UP", K_DOWN: "DOWN", K_LEFT: "LEFT", K_RIGHT: "RIGHT", K_TAB: "TAB",
            K_ENTER: "ENTER", K_ESC: "ESC", K_BS: "BS"}
 LETTER_NAV = {"f": "UP", "x": "DOWN", "z": "LEFT", "c": "RIGHT"}
@@ -174,7 +183,7 @@ class FrameBuffer:
         self.show(Image.new("RGB", (LCD_W, LCD_H)))
 
 
-JP_TEST = "、。あいえかがくけこしすせそただつてでなにのはぶほまみめもらりるれわをんアエキクケコタチッドニブプボモリルロ・ー上下中了今低体使値六出分切前力動半反取可向回変外失字定実小少差常当形後応戻接推換敗文方時替最有本標横次残段池消測準独用直省確秒節約終給線自色行見角設許認読費起通遅選部量間限電"  # 画面に出る字 (□にならないフォントだけ使う)
+JP_TEST = "、。あいえかがくけこさしすせそただつてでなにのはぶほまみめもらりるれわをんアエキクケコタチッドニブプボモリルロ・ー上下中了今低体使値六出分切前力動半反取可向味回変外失字定実小少差常当形後応意戻接推換敗文方明時替最有本標横次残段池消測準無独用画直省確秒節約終給線自色行見角設許認読費起通遅選部量間限電面"  # 画面に出る字 (□にならないフォントだけ使う)
 _FONT_FILE = {}
 
 
@@ -432,7 +441,7 @@ class App:
         d = after - before
         txt = f"{d:+.2f}W"
         self.deltas[key] = txt
-        name = dict((k, n) for k, n, _ in ITEMS)[key]
+        name = dict((k, n) for k, n, _ in ITEMS).get(key, key)
         self.say(f"{name} 切替の差: {txt}  ({before:.2f}→{after:.2f}W)", 4)
 
     # ---- actions
@@ -449,6 +458,8 @@ class App:
             return
         if key == "boot":
             r = ctl("boot", "off" if cur else "on")
+        elif key == "bl":
+            r = ctl("set", "bl", str(bl_next(cur)))
         elif key == "cpu":
             r = ctl("set", "cpu", self.cpu_next(cur))
         else:
@@ -488,8 +499,8 @@ class App:
             return CPU_NAMES.get(v, v), (FG if v == "std" else OFFC)
         if key == "wifips":                       # ON = 節電中
             return ("省電力" if v else "通常"), (OFFC if v else FG)
-        if key == "boot":
-            return ("当てる" if v else "当てない"), (ACC if v else SUB)
+        if key == "bl":
+            return f"{v}%", (FG if v >= 95 else OFFC)
         return ("ON" if v else "OFF"), (FG if v else OFFC)
 
     def detail_of(self, key):
@@ -618,12 +629,15 @@ class App:
         d = ImageDraw.Draw(img)
         d.rectangle((0, 0, LCD_W, TOP_H - 1), fill=(0, 0, 0))
         d.text((5, 1), "HEXA POWER", fill=ACC, font=self.font_bs)
+        bt = "起動時:当てる" if self.state.get("boot") else "起動時:当てない"
+        d.text((5 + self.font_bs.getlength("HEXA POWER") + 8, 3), bt,
+               fill=ACC if self.state.get("boot") else (90, 98, 115), font=self.font_t)
         b = self.last
         if b:
             st = ("電池" if b["on_bat"] else "外部給電") + (f"  {b['soc']:.0f}%" if b.get("soc") is not None else "")
             d.text((LCD_W - 4 - self.font_t.getlength(st), 3), st, fill=SUB, font=self.font_t)
         d.rectangle((0, LCD_H - BOT_H, LCD_W, LCD_H), fill=(0, 0, 0))
-        d.text((4, LCD_H - BOT_H + 1), "FXZC:選ぶ  1-6:直接  ENTER:切替  ESC:終了",
+        d.text((4, LCD_H - BOT_H + 1), "FXZC:選ぶ 1-6:直接 ENTER:切替 S:起動時 ESC:終了",
                fill=(210, 210, 210), font=self.font_s)
         msg, until = self.toast
         if msg and time.time() < until:
@@ -691,6 +705,8 @@ class App:
                     self.move(val)
                 elif kind == "CHAR" and val in "123456":
                     self.sel = int(val) - 1
+                elif kind == "CHAR" and val == "s":
+                    self.toggle("boot")
                 elif kind == "CHAR" and val == "r":
                     self.refresh_state()
                 elif kind == "CHAR" and val == "q":
@@ -777,6 +793,7 @@ class SimBattery:
         p += 0.28 if st.get("lan") else 0
         p += {"std": 0.35, "eco": 0.18, "min": 0.05}.get((st.get("cpu") or {}).get("preset"), 0.35)
         p += 0.0 if st.get("wifips") else 0.2
+        p += 0.0019 * (st.get("bl") or 0)
         p += random.uniform(-0.05, 0.05)
         v = 3.86
         if not self.on_bat:
@@ -796,7 +813,8 @@ def run_sim(outdir):
               (0.1, C("3")), (0.1, A("ENTER")), (2.2, ("SNAP", "03_lan_off.png")),
               (0.1, C("4")), (0.1, A("ENTER")), (0.3, A("ENTER")), (2.2, ("SNAP", "04_cpu_min.png")),
               (0.1, C("5")), (0.1, A("ENTER")), (2.2, ("SNAP", "05_wifips.png")),
-              (0.1, C("6")), (0.1, A("ENTER")), (0.3, ("SNAP", "06_boot.png"))]
+              (0.1, C("6")), (0.1, A("ENTER")), (0.3, A("ENTER")), (2.2, ("SNAP", "06_bl30.png")),
+              (0.1, C("s")), (0.3, ("SNAP", "07_boot.png"))]
     keys = SimKeys(script, fb)
     app = App(fb, keys, bat)
     ref[0] = app
@@ -808,7 +826,7 @@ def run_sim(outdir):
     app.sample()
     app.sel = 1
     fb.show(app.draw())
-    fb.snap("07_external.png")
+    fb.snap("08_external.png")
     print("sim done:", outdir)
 
 
