@@ -20,7 +20,7 @@ sudo reboot                         # 初回だけ (ｱｲｺﾝと権限の反�
 | 1 | BT | Bluetooth ON/OFF (rfkill) |
 | 2 | HDMI | HDMI 出力 ON/OFF |
 | 3 | LAN | 有線LANﾁｯﾌﾟ(USBの SR9900) を切り離す/戻す |
-| 4 | CPU | 標準 → ｴｺ(2ｺｱ) → 最小(2ｺｱ・最低ｸﾛｯｸ) |
+| 4 | CPU | 標準 → ｴｺ(2ｺｱ) → 最小(最低ｸﾛｯｸ)。1ｺｱの本体では 標準 ↔ 最小 |
 | 5 | Wi-Fi | Wi-Fi の省電力 ON/OFF |
 | 6 | 起動時 | ここでの設定を次の起動時にも当てる |
 
@@ -45,7 +45,12 @@ sudo reboot                         # 初回だけ (ｱｲｺﾝと権限の反�
   `sudo hexapower-ctl set bt on; sudo hexapower-ctl set lan on; sudo hexapower-ctl set cpu std; sudo hexapower-ctl set hdmi on; sudo hexapower-ctl boot off`
 - 有線LANで SSH している時に LAN を OFF にすると切れる (Wi-Fi なら大丈夫)
 
-## 実機で確かめること (v0.1 は PC の模擬でだけ確認)
+## 実機で分かったこと (v0.1.1)
+- 電池は `/sys/class/power_supply/bq27220-0` から読める。`power_avg` は電圧×電流と大きくずれる (0.15W と 1.68W) ので、消費は **電圧×電流** で出す
+- 標準の OS は CPU 1ｺｱで動いている → CPU は 標準(1000MHz) ↔ 最小(600MHz) の2段
+- 本体ﾌｫﾝﾄ (AlibabaPuHuiTi) は字が足りないので Noto CJK が使われる
+
+## 実機で確かめること
 - 電池の値がどちらで読めるか (`--probe`)、電流の符号 (放電がﾏｲﾅｽになるか)
 - HDMI が `/sys/class/drm/card*-HDMI-A-*` で切れるか (無ければ vcgencmd)
 - LAN の切り離しで本当に下がるか (USBﾊﾌﾞのﾎﾟｰﾄ電源は切れないので、ﾁｯﾌﾟが休むだけ)

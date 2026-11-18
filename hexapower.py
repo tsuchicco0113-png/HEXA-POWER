@@ -36,7 +36,7 @@ import time
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 LCD_W, LCD_H = 320, 170
 TOP_H, BOT_H = 18, 16
 BG, FG, SUB = (14, 16, 22), (235, 238, 245), (150, 158, 175)
@@ -54,7 +54,7 @@ ITEMS = [  # key, 六角形の名前, 説明
     ("bt", "BT", "Bluetooth。使わないなら OFF"),
     ("hdmi", "HDMI", "HDMI 出力。モニタをつながないなら OFF"),
     ("lan", "LAN", "有線LANチップ。LANケーブルを使わないなら OFF"),
-    ("cpu", "CPU", "標準→エコ(2コア)→最小(2コア・最低クロック)"),
+    ("cpu", "CPU", "標準→エコ(2コア)→最小(最低クロック)"),
     ("wifips", "Wi-Fi", "Wi-Fi の省電力。ON で節電 (反応が少し遅くなる)"),
     ("boot", "起動時", "ここでの設定を、次の起動時にも当てる"),
 ]
@@ -332,7 +332,9 @@ class Battery:
         if v is None:
             return None
         if on_bat:
-            p = abs(p) if p else (v * abs(i) if i is not None else None)
+            # 実機 (bq27220-0) の power_avg は電圧×電流と大きくずれる (0.15W vs 1.68W) ので、
+            # 電圧×電流を優先し、電流が読めない時だけ平均電力を使う
+            p = v * abs(i) if i is not None else (abs(p) if p else None)
         else:
             p = None
         return {"v": v, "i": i, "p": p, "soc": soc, "on_bat": on_bat, "tte": tte, "temp": temp}
@@ -448,7 +450,7 @@ class App:
         if key == "boot":
             r = ctl("boot", "off" if cur else "on")
         elif key == "cpu":
-            r = ctl("set", "cpu", CPU_NEXT.get(cur, "std"))
+            r = ctl("set", "cpu", self.cpu_next(cur))
         else:
             r = ctl("set", key, "off" if cur else "on")
         if not r.get("ok"):
@@ -462,6 +464,16 @@ class App:
             self.say("切り替えました。15秒後に差を出します", 2.5)
         else:
             self.say("起動時にも当てます" if self.state.get("boot") else "起動時には当てません", 2.5)
+
+    def single_core(self):
+        c = self.state.get("cpu")
+        return isinstance(c, dict) and c.get("total", 4) < 2
+
+    def cpu_next(self, cur):
+        """1コアの本体では エコ(2コア) は意味が無いので 標準 ↔ 最小 の2段"""
+        if self.single_core():
+            return "min" if cur == "std" else "std"
+        return CPU_NEXT.get(cur, "std")
 
     def say(self, msg, sec=2.5):
         self.toast = (msg, time.time() + sec)
@@ -488,6 +500,8 @@ class App:
             return s + (f" / 今 {c['cur']}MHz" if c.get("cur") else "")
         if v is None:
             return "この本体では見つかりません"
+        if key == "cpu":
+            return "標準↔最小(最低クロック)" if self.single_core() else dict((k, d) for k, _, d in ITEMS)[key]
         return dict((k, d) for k, _, d in ITEMS)[key]
 
     def draw(self):

@@ -194,7 +194,9 @@ def cpu_get():
                       ("hwmin", "cpuinfo_min_freq"), ("cur", "scaling_cur_freq"))})
         info["gov"] = rd(pol + "/scaling_governor", "")
     preset = "std"
-    for name, p in CPU_PRESETS.items():
+    names = ["std", "min"] if info["total"] < 2 else list(CPU_PRESETS)   # 1コアの本体
+    for name in names:
+        p = CPU_PRESETS[name]
         want_max = info.get("hwmax") if p["freq"] == "max" else info.get("hwmin")
         if min(p["cores"], info["total"]) == info["cores"] and (not pol or info.get("max") == want_max):
             preset = name
